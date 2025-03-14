@@ -6,9 +6,11 @@ const statusText = document.getElementById("status");
 const startBtn = document.getElementById("start-camera");
 const stopBtn = document.getElementById("stop-camera");
 const captureBtn = document.getElementById("capture-photo");
+const saveBtn = document.getElementById("save-coordinates");
 
 let stream = null;
 let detecting = false;
+let lastPredictions = [];
 
 // Charger le modèle
 async function loadModel() {
@@ -56,12 +58,14 @@ function enableButtons() {
     startBtn.disabled = true;
     stopBtn.disabled = false;
     captureBtn.disabled = false;
+    saveBtn.disabled = false;
 }
 
 function disableButtons() {
     startBtn.disabled = false;
     stopBtn.disabled = true;
     captureBtn.disabled = true;
+    saveBtn.disabled = true;
 }
 
 // Fonction pour capturer une photo avec les objets détectés
@@ -78,12 +82,13 @@ function capturePhoto(predictions) {
         ctx.lineWidth = 4;
         ctx.strokeRect(x, y, width, height);
 
-        // Ajouter une étiquette avec un fond pour lisibilité
+        // Ajouter l'étiquette et les coordonnées
         ctx.fillStyle = "red";
         ctx.font = "16px Arial";
-        ctx.fillRect(x, y - 20, ctx.measureText(pred.class).width + 10, 20);
+        const text = `${pred.class} (${Math.round(x)}, ${Math.round(y)})`;
+        ctx.fillRect(x, y - 20, ctx.measureText(text).width + 10, 20);
         ctx.fillStyle = "white";
-        ctx.fillText(pred.class, x + 5, y - 5);
+        ctx.fillText(text, x + 5, y - 5);
     });
 
     // Télécharger l'image annotée
@@ -94,19 +99,39 @@ function capturePhoto(predictions) {
     link.click();
 }
 
+// Fonction pour sauvegarder les coordonnées en JSON
+function saveCoordinates() {
+    if (lastPredictions.length === 0) return;
+
+    const data = lastPredictions.map(pred => ({
+        objet: pred.class,
+        x: Math.round(pred.bbox[0]),
+        y: Math.round(pred.bbox[1]),
+        largeur: Math.round(pred.bbox[2]),
+        hauteur: Math.round(pred.bbox[3])
+    }));
+
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "coordonnees.json";
+    link.click();
+}
+
 // Détection des objets
 async function detectObjects() {
     if (!model || !detecting) return;
 
     requestAnimationFrame(detectObjects);
-    const predictions = await model.detect(video);
+    lastPredictions = await model.detect(video);
     
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    predictions.forEach(pred => {
+    lastPredictions.forEach(pred => {
         const [x, y, width, height] = pred.bbox;
 
         // Dessiner le rectangle autour de l'objet
@@ -114,23 +139,25 @@ async function detectObjects() {
         ctx.lineWidth = 4;
         ctx.strokeRect(x, y, width, height);
 
-        // Ajouter une étiquette avec un fond pour lisibilité
+        // Ajouter l'étiquette avec les coordonnées
         ctx.fillStyle = "red";
         ctx.font = "16px Arial";
-        ctx.fillRect(x, y - 20, ctx.measureText(pred.class).width + 10, 20);
+        const text = `${pred.class} (${Math.round(x)}, ${Math.round(y)})`;
+        ctx.fillRect(x, y - 20, ctx.measureText(text).width + 10, 20);
         ctx.fillStyle = "white";
-        ctx.fillText(pred.class, x + 5, y - 5);
+        ctx.fillText(text, x + 5, y - 5);
     });
 
-    statusText.textContent = `Objets détectés : ${predictions.length}`;
+    statusText.textContent = `Objets détectés : ${lastPredictions.length}`;
 
-    // Permettre la capture après la détection
-    captureBtn.onclick = () => capturePhoto(predictions);
+    // Activer la sauvegarde des coordonnées après détection
+    saveBtn.disabled = false;
 }
 
 // Ajouter les événements aux boutons
 startBtn.addEventListener("click", startCamera);
 stopBtn.addEventListener("click", stopCamera);
+saveBtn.addEventListener("click", saveCoordinates);
 
 // Charger le modèle dès le démarrage
 loadModel();
